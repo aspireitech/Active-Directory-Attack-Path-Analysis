@@ -1,0 +1,104 @@
+{
+  "General": {
+    "OrganizationName": "CONTOSO",
+    "DomainControllers": [],
+    "ReportStoragePath": "C:\\ADAttackPathReports",
+    "BaselineStoragePath": "C:\\ADAttackPathReports\\Baselines",
+    "LogStoragePath": "C:\\ADAttackPathReports\\Logs",
+    "RetentionDays": 90,
+    "LogLevel": "INFO"
+  },
+  "Email": {
+    "Enabled": false,
+    "Provider": "SMTP",
+    "SmtpServer": "smtp.contoso.com",
+    "SmtpPort": 587,
+    "UseTLS": true,
+    "SenderAddress": "ad-security@contoso.com",
+    "SenderName": "AD Security Platform",
+    "ToRecipients": [],
+    "CcRecipients": [],
+    "BccRecipients": [],
+    "SubjectPrefix": "AD Attack Path Report",
+    "MicrosoftGraph": {
+      "TenantId": "",
+      "ClientId": "",
+      "CertificateThumbprint": "",
+      "ClientSecret": ""
+    }
+  },
+  "Schedule": {
+    "Enabled": false,
+    "Frequency": "Weekly",
+    "DayOfWeek": "Monday",
+    "TimeOfDay": "06:00",
+    "RunAsUser": "CONTOSO\\svc-adsecurity"
+  },
+  "BloodHound": {
+    "Enabled": false,
+    "Edition": "Community",
+    "ServerUrl": "http://localhost:8080",
+    "ApiKey": "",
+    "Username": "",
+    "Password": ""
+  },
+  "RiskThresholds": {
+    "Critical": 90,
+    "High": 70,
+    "Medium": 40,
+    "Low": 0
+  },
+  "Analysis": {
+    "MaxAttackPathDepth": 10,
+    "IncludeDisabledAccounts": false,
+    "StaleAccountDays": 90,
+    "DormantPrivilegedAccountDays": 30,
+    "EnableDCSync": true,
+    "EnableKerberoasting": true,
+    "EnableDelegation": true,
+    "EnableACLAnalysis": true,
+    "EnableShadowAdmins": true,
+    "EnableAttackPaths": true,
+    "PrivilegedGroups": [
+      "Domain Admins",
+      "Enterprise Admins",
+      "Schema Admins",
+      "Administrators",
+      "Account Operators",
+      "Backup Operators",
+      "Print Operators",
+      "Server Operators",
+      "Group Policy Creator Owners",
+      "DNSAdmins",
+      "DnsAdmins",
+      "Exchange Windows Permissions",
+      "Exchange Trusted Subsystem",
+      "Organization Management"
+    ],
+    "Tier0Groups": [
+      "Domain Admins",
+      "Enterprise Admins",
+      "Schema Admins",
+      "Administrators",
+      "Domain Controllers",
+      "Read-only Domain Controllers"
+    ],
+    "Tier1Groups": [
+      "Account Operators",
+      "Backup Operators",
+      "Print Operators",
+      "Server Operators",
+      "DNSAdmins",
+      "DnsAdmins",
+      "Group Policy Creator Owners",
+      "Remote Desktop Users",
+      "Network Configuration Operators"
+    ]
+  },
+  "Credentials": {
+    "UseCurrentContext": true,
+    "CredentialManagerTarget": "ADAttackPathAnalysis",
+    "UseCertificate": false,
+    "CertificateThumbprint": ""
+  }
+}
