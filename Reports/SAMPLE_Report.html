@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AD Attack Path Report – CONTOSO Corp [SAMPLE]</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/dataTables.bootstrap5.min.css">
+<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.2/css/buttons.bootstrap5.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.min.css">
+<style>
+  :root { --ad-primary:#1a1a2e; --ad-accent:#0f3460; }
+  [data-bs-theme="dark"] { --bs-body-bg:#121212; --bs-body-color:#e0e0e0; --bs-card-bg:#1e1e1e; --bs-border-color:#333; }
+  body { font-size:14px; }
+  .sidebar { position:fixed; top:0; left:0; height:100vh; width:240px; background:var(--ad-primary); color:white; overflow-y:auto; z-index:1000; transition:width .3s; }
+  .sidebar.collapsed { width:60px; }
+  .sidebar .nav-link { color:rgba(255,255,255,.75); padding:9px 15px; border-radius:6px; margin:2px 8px; font-size:13px; white-space:nowrap; overflow:hidden; }
+  .sidebar .nav-link:hover, .sidebar .nav-link.active { color:#fff; background:var(--ad-accent); }
+  .sidebar .nav-link .bi { margin-right:8px; font-size:15px; min-width:20px; }
+  .sidebar-brand { padding:18px 15px; border-bottom:1px solid rgba(255,255,255,.1); }
+  .sidebar-section { font-size:10px; color:rgba(255,255,255,.4); text-transform:uppercase; padding:10px 23px 4px; letter-spacing:1px; }
+  .main-content { margin-left:240px; padding:20px; min-height:100vh; transition:margin-left .3s; }
+  .main-content.expanded { margin-left:60px; }
+  @media(max-width:768px){ .sidebar{width:60px;} .main-content{margin-left:60px;} .nav-label{display:none;} }
+
+  .badge-critical { background:#dc3545!important; color:#fff!important; }
+  .badge-high     { background:#fd7e14!important; color:#fff!important; }
+  .badge-medium   { background:#ffc107!important; color:#212529!important; }
+  .badge-low      { background:#28a745!important; color:#fff!important; }
+
+  .risk-score-circle { width:130px; height:130px; border-radius:50%; display:flex; flex-direction:column; align-items:center; justify-content:center; font-weight:700; color:#fff; box-shadow:0 4px 18px rgba(0,0,0,.35); margin:0 auto; }
+  .risk-score-number { font-size:44px; line-height:1; }
+  .risk-score-label  { font-size:11px; opacity:.9; text-transform:uppercase; letter-spacing:1px; }
+
+  .metric-card { border:none; border-radius:12px; transition:transform .2s; }
+  .metric-card:hover { transform:translateY(-3px); box-shadow:0 6px 20px rgba(0,0,0,.15); }
+  .metric-number { font-size:38px; font-weight:700; line-height:1.1; }
+
+  .path-chain { font-family:monospace; font-size:12px; background:#f0f4ff; border-radius:6px; padding:10px 14px; border-left:3px solid #0d6efd; word-break:break-all; }
+  [data-bs-theme="dark"] .path-chain { background:#1e2540; }
+
+  .finding-card { border-left:4px solid; transition:all .2s; }
+  .finding-card.critical { border-left-color:#dc3545; }
+  .finding-card.high     { border-left-color:#fd7e14; }
+  .finding-card.medium   { border-left-color:#ffc107; }
+  .finding-card.low      { border-left-color:#28a745; }
+
+  .page-header { background:linear-gradient(135deg,#1a1a2e 0%,#0f3460 100%); color:#fff; border-radius:12px; padding:24px 30px; margin-bottom:24px; }
+  .remediation-step { background:#e8f5e9; border-radius:6px; padding:12px 16px; margin:6px 0; border-left:3px solid #28a745; }
+  [data-bs-theme="dark"] .remediation-step { background:#1a2e1a; }
+  .section-anchor { padding-top:70px; margin-top:-60px; }
+  .new-badge { animation:pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
+  .timeline-item { border-left:2px solid #dee2e6; padding-left:20px; margin-left:10px; position:relative; padding-bottom:18px; }
+  .timeline-item::before { content:''; position:absolute; left:-8px; top:4px; width:14px; height:14px; border-radius:50%; background:#0d6efd; }
+  .timeline-item.new::before { background:#dc3545; }
+  .timeline-item.resolved::before { background:#28a745; }
+  ::-webkit-scrollbar{width:6px} ::-webkit-scrollbar-thumb{background:#888;border-radius:3px}
+  @media print { .sidebar,.btn,.no-print{display:none!important} .main-content{margin-left:0!important} .card{break-inside:avoid} }
+
+  .stat-bar { height:8px; border-radius:4px; background:#e9ecef; overflow:hidden; }
+  .stat-bar-fill { height:100%; border-radius:4px; }
+  .attack-path-node { display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border-radius:20px; font-size:12px; font-weight:600; }
+  .attack-path-arrow { color:#dc3545; font-size:16px; margin:0 4px; }
+  details summary { cursor:pointer; user-select:none; }
+  details summary::-webkit-details-marker { display:none; }
+</style>
+</head>
+<body>
+
+<!-- ───────────────────────── SIDEBAR ───────────────────────── -->
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
+    <div class="d-flex align-items-center gap-2">
+      <i class="bi bi-shield-lock-fill text-danger fs-4"></i>
+      <div class="nav-label">
+        <div style="font-weight:700;font-size:14px">AD Attack Path</div>
+        <div style="font-size:11px;opacity:.55">Security Platform</div>
+      </div>
+    </div>
+  </div>
+  <div style="padding:10px 8px">
+    <div class="sidebar-section nav-label">Overview</div>
+    <a href="#exec-summary"    class="nav-link active"><i class="bi bi-speedometer2"></i><span class="nav-label">Executive Summary</span></a>
+    <a href="#attention"       class="nav-link"><i class="bi bi-exclamation-triangle-fill text-danger"></i><span class="nav-label">Attention Required</span></a>
+    <a href="#new-this-week"   class="nav-link"><i class="bi bi-bell-fill text-warning"></i><span class="nav-label">New This Week</span></a>
+    <a href="#risk-trends"     class="nav-link"><i class="bi bi-graph-up"></i><span class="nav-label">Risk Trends</span></a>
+    <div class="sidebar-section nav-label">Attack Analysis</div>
+    <a href="#attack-paths"    class="nav-link"><i class="bi bi-diagram-3-fill text-danger"></i><span class="nav-label">Attack Paths</span></a>
+    <a href="#all-findings"    class="nav-link"><i class="bi bi-list-ul"></i><span class="nav-label">All Findings</span></a>
+    <a href="#acl-risks"       class="nav-link"><i class="bi bi-key-fill text-warning"></i><span class="nav-label">ACL Risks</span></a>
+    <a href="#dcsync"          class="nav-link"><i class="bi bi-arrow-repeat text-danger"></i><span class="nav-label">DCSync</span></a>
+    <a href="#kerberoasting"   class="nav-link"><i class="bi bi-ticket-fill text-warning"></i><span class="nav-label">Kerberoasting</span></a>
+    <div class="sidebar-section nav-label">Identity Risks</div>
+    <a href="#privileged"      class="nav-link"><i class="bi bi-person-fill-gear text-warning"></i><span class="nav-label">Privileged Access</span></a>
+    <a href="#tier0"           class="nav-link"><i class="bi bi-crown-fill text-danger"></i><span class="nav-label">Tier-0 Exposure</span></a>
+    <a href="#shadow-admins"   class="nav-link"><i class="bi bi-incognito text-warning"></i><span class="nav-label">Shadow Admins</span></a>
+    <a href="#stale-accounts"  class="nav-link"><i class="bi bi-person-slash"></i><span class="nav-label">Stale Accounts</span></a>
+    <a href="#delegation"      class="nav-link"><i class="bi bi-arrow-left-right text-warning"></i><span class="nav-label">Delegation Risks</span></a>
+    <div class="sidebar-section nav-label">Infrastructure</div>
+    <a href="#domain-controllers" class="nav-link"><i class="bi bi-server text-info"></i><span class="nav-label">Domain Controllers</span></a>
+    <a href="#password-policy"    class="nav-link"><i class="bi bi-lock-fill"></i><span class="nav-label">Password Policies</span></a>
+    <div class="sidebar-section nav-label">Remediation</div>
+    <a href="#remediation"     class="nav-link"><i class="bi bi-tools text-success"></i><span class="nav-label">Remediation Plan</span></a>
+  </div>
+</nav>
+
+<!-- ───────────────────────── MAIN ───────────────────────── -->
+<div class="main-content" id="mainContent">
+
+<!-- TOPBAR -->
+<nav class="navbar navbar-expand-lg bg-body-tertiary rounded mb-3 px-3 sticky-top" style="z-index:999">
+  <button class="btn btn-sm btn-outline-secondary me-2" id="sidebarToggle"><i class="bi bi-layout-sidebar"></i></button>
+  <span class="navbar-brand mb-0 h6 text-muted">
+    <i class="bi bi-building me-1"></i>CONTOSO Corp &nbsp;|&nbsp; <i class="bi bi-globe me-1"></i>contoso.local
+  </span>
+  <div class="ms-auto d-flex align-items-center gap-2">
+    <div class="input-group input-group-sm" style="width:210px">
+      <span class="input-group-text"><i class="bi bi-search"></i></span>
+      <input type="text" id="globalSearch" class="form-control" placeholder="Search findings…">
+    </div>
+    <button class="btn btn-sm btn-outline-secondary" id="darkModeToggle" title="Dark mode"><i class="bi bi-moon-fill"></i></button>
+    <div class="dropdown">
+      <button class="btn btn-sm btn-primary dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-download me-1"></i>Export</button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        <li><a class="dropdown-item" href="#" onclick="window.print()"><i class="bi bi-printer me-2"></i>Print / PDF</a></li>
+        <li><a class="dropdown-item" href="#" id="exportCsvBtn"><i class="bi bi-file-csv me-2"></i>CSV Export</a></li>
+      </ul>
+    </div>
+    <span class="badge bg-secondary"><i class="bi bi-clock me-1"></i>Monday, June 10, 2026 06:12:34</span>
+  </div>
+</nav>
+
+<!-- PAGE HEADER -->
+<div class="page-header">
+  <div class="row align-items-center">
+    <div class="col">
+      <h1 class="h3 mb-1"><i class="bi bi-shield-lock me-2"></i>Active Directory Attack Path Analysis</h1>
+      <p class="mb-0 opacity-75">
+        <i class="bi bi-building me-1"></i>CONTOSO Corp &nbsp;&nbsp;
+        <i class="bi bi-globe me-1"></i>contoso.local &nbsp;&nbsp;
+        <i class="bi bi-calendar3 me-1"></i>Monday, June 10, 2026 06:12:34
+      </p>
+      <div class="mt-2 d-flex flex-wrap gap-2">
+        <span class="badge bg-danger bg-opacity-75 fs-6">⚠ CRITICAL RISK ENVIRONMENT</span>
+        <span class="badge bg-warning text-dark">4 New Critical Findings This Week</span>
+      </div>
+    </div>
+    <div class="col-auto text-end">
+      <div class="risk-score-circle" style="background:#dc3545">
+        <div class="risk-score-number">87</div>
+        <div class="risk-score-label">HIGH</div>
+      </div>
+      <div class="text-white small mt-2 opacity-75">Domain Risk Score</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ EXECUTIVE SUMMARY ═══════════════════════════════════ -->
+<div class="section-anchor" id="exec-summary"></div>
+<div class="mb-5">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h2 class="h4 mb-0"><i class="bi bi-speedometer2 me-2 text-primary"></i>Executive Summary</h2>
+  </div>
+
+  <!-- Metric cards -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="card metric-card text-center p-3" style="background:#dc3545;color:#fff">
+        <div class="metric-number">5</div>
+        <div class="small fw-semibold">Critical Findings</div>
+        <div class="small opacity-75">+2 vs last week</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card metric-card text-center p-3" style="background:#fd7e14;color:#fff">
+        <div class="metric-number">11</div>
+        <div class="small fw-semibold">High Findings</div>
+        <div class="small opacity-75">+1 vs last week</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card metric-card bg-warning text-dark text-center p-3">
+        <div class="metric-number">18</div>
+        <div class="small fw-semibold">Medium Findings</div>
+        <div class="small opacity-75">−3 vs last week</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card metric-card bg-success text-white text-center p-3">
+        <div class="metric-number">9</div>
+        <div class="small fw-semibold">Low Findings</div>
+        <div class="small opacity-75">No change</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <!-- AD Stats -->
+    <div class="col-md-3">
+      <div class="card h-100 p-3">
+        <div class="d-flex justify-content-between mb-2"><span class="fw-semibold">AD Statistics</span><i class="bi bi-building text-muted"></i></div>
+        <table class="table table-sm table-borderless mb-0">
+          <tr><td class="text-muted">Users</td><td class="fw-bold text-end">3,842</td></tr>
+          <tr><td class="text-muted">Enabled Users</td><td class="fw-bold text-end">3,201</td></tr>
+          <tr><td class="text-muted">Groups</td><td class="fw-bold text-end">487</td></tr>
+          <tr><td class="text-muted">Computers</td><td class="fw-bold text-end">1,654</td></tr>
+          <tr><td class="text-muted">Domain Controllers</td><td class="fw-bold text-end">4</td></tr>
+          <tr><td class="text-muted">OUs</td><td class="fw-bold text-end">93</td></tr>
+        </table>
+      </div>
+    </div>
+    <!-- Attack Surface -->
+    <div class="col-md-3">
+      <div class="card h-100 p-3">
+        <div class="d-flex justify-content-between mb-2"><span class="fw-semibold">Attack Surface</span><i class="bi bi-bullseye text-danger"></i></div>
+        <table class="table table-sm table-borderless mb-0">
+          <tr><td class="text-muted">Kerberoastable</td><td class="fw-bold text-end text-danger">24</td></tr>
+          <tr><td class="text-muted">AS-REP Roastable</td><td class="fw-bold text-end text-danger">7</td></tr>
+          <tr><td class="text-muted">DCSync Capable</td><td class="fw-bold text-end text-danger">3</td></tr>
+          <tr><td class="text-muted">Shadow Admins</td><td class="fw-bold text-end text-warning">5</td></tr>
+          <tr><td class="text-muted">Unconstrained Deleg.</td><td class="fw-bold text-end text-warning">8</td></tr>
+          <tr><td class="text-muted">ACL Findings</td><td class="fw-bold text-end text-warning">12</td></tr>
+        </table>
+      </div>
+    </div>
+    <!-- Severity Donut -->
+    <div class="col-md-3">
+      <div class="card h-100 p-3 d-flex align-items-center justify-content-center">
+        <div class="fw-semibold mb-2 align-self-start w-100">Finding Breakdown</div>
+        <canvas id="severityChart" height="170"></canvas>
+      </div>
+    </div>
+    <!-- Attack Surface Bar -->
+    <div class="col-md-3">
+      <div class="card h-100 p-3">
+        <div class="fw-semibold mb-3">Top Risks by Count</div>
+        <div class="mb-2">
+          <div class="d-flex justify-content-between small mb-1"><span>Kerberoastable</span><span class="fw-bold text-danger">24</span></div>
+          <div class="stat-bar"><div class="stat-bar-fill bg-danger" style="width:96%"></div></div>
+        </div>
+        <div class="mb-2">
+          <div class="d-flex justify-content-between small mb-1"><span>ACL Findings</span><span class="fw-bold" style="color:#fd7e14">12</span></div>
+          <div class="stat-bar"><div class="stat-bar-fill" style="width:48%;background:#fd7e14"></div></div>
+        </div>
+        <div class="mb-2">
+          <div class="d-flex justify-content-between small mb-1"><span>Pwd Never Expires</span><span class="fw-bold text-warning">11</span></div>
+          <div class="stat-bar"><div class="stat-bar-fill bg-warning" style="width:44%"></div></div>
+        </div>
+        <div class="mb-2">
+          <div class="d-flex justify-content-between small mb-1"><span>Unconstrained Deleg.</span><span class="fw-bold text-warning">8</span></div>
+          <div class="stat-bar"><div class="stat-bar-fill bg-warning" style="width:32%"></div></div>
+        </div>
+        <div class="mb-2">
+          <div class="d-flex justify-content-between small mb-1"><span>AS-REP Roastable</span><span class="fw-bold text-danger">7</span></div>
+          <div class="stat-bar"><div class="stat-bar-fill bg-danger" style="width:28%"></div></div>
+        </div>
+        <div class="mb-2">
+          <div class="d-flex justify-content-between small mb-1"><span>Shadow Admins</span><span class="fw-bold" style="color:#fd7e14">5</span></div>
+          <div class="stat-bar"><div class="stat-bar-fill" style="width:20%;background:#fd7e14"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ ATTENTION REQUIRED ═══════════════════════════════════ -->
+<div class="section-anchor" id="attention"></div>
+<div class="mb-5">
+  <h2 class="h4 mb-3"><i class="bi bi-exclamation-triangle-fill text-danger me-2"></i>Attention Required <span class="badge badge-critical ms-1">5 Critical</span></h2>
+
+  <!-- Critical Finding 1: DCSync -->
+  <div class="card finding-card critical mb-3 p-3">
+    <div class="d-flex justify-content-between align-items-start">
+      <div class="flex-grow-1">
+        <h6 class="fw-bold mb-1">
+          <span class="badge badge-critical me-2">CRITICAL</span>
+          DCSync Rights: CONTOSO\svc-azuread-sync
+          <a href="https://attack.mitre.org/techniques/T1003/006/" target="_blank" class="badge bg-dark text-decoration-none ms-1">T1003.006</a>
+        </h6>
+        <p class="text-muted small mb-2">The identity <code>CONTOSO\svc-azuread-sync</code> has <strong>DS-Replication-Get-Changes-All</strong> rights on the domain object. An attacker who compromises this account can replicate ALL credential hashes from the domain including the KRBTGT hash, enabling Golden Ticket attacks.</p>
+        <details>
+          <summary class="text-primary small mb-2">▶ Show exploit details &amp; remediation</summary>
+          <div class="row g-3 mt-1">
+            <div class="col-md-6">
+              <div class="small text-muted fw-semibold mb-1"><i class="bi bi-lightning-charge-fill text-danger me-1"></i>HOW AN ATTACKER ABUSES THIS</div>
+              <div class="path-chain small">mimikatz # lsadump::dcsync /user:krbtgt<br>impacket-secretsdump CONTOSO/svc-azuread-sync@DC01.contoso.local</div>
+            </div>
+            <div class="col-md-6">
+              <div class="remediation-step">
+                <div class="small text-success fw-semibold mb-1"><i class="bi bi-tools me-1"></i>SAFE REMEDIATION (Risk: LOW)</div>
+                <div class="small">1) Verify if this account is Azure AD Connect. If yes, check if <em>DS-Replication-Get-Changes-All</em> is actually needed (it is NOT required for Password Hash Sync). Run Azure AD Connect wizard in Express mode to reset permissions.<br>2) If not Azure AD Connect: remove the right immediately via ADSI Edit &gt; domain root &gt; Properties &gt; Security.<br>3) Monitor Event ID 4662 for unauthorized replication requests.</div>
+              </div>
+            </div>
+          </div>
+        </details>
+      </div>
+      <div class="text-end ms-3 flex-shrink-0">
+        <div class="display-6 fw-bold text-danger">95</div>
+        <div class="small text-muted">risk score</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Critical Finding 2: Unconstrained Delegation on a non-DC -->
+  <div class="card finding-card critical mb-3 p-3">
+    <div class="d-flex justify-content-between align-items-start">
+      <div class="flex-grow-1">
+        <h6 class="fw-bold mb-1">
+          <span class="badge badge-critical me-2">CRITICAL</span>
+          Unconstrained Delegation: WEB-SRV-01 (Windows Server 2019)
+          <a href="https://attack.mitre.org/techniques/T1558/001/" target="_blank" class="badge bg-dark text-decoration-none ms-1">T1558.001</a>
+          <span class="badge bg-warning text-dark new-badge ms-1">NEW</span>
+        </h6>
+        <p class="text-muted small mb-2">Computer account <code>WEB-SRV-01$</code> has <strong>TrustedForDelegation=True</strong>. Any authenticated user whose TGT lands on this server (e.g., via the Printer Bug or coerced auth) can be captured and reused. This was added <strong>this week</strong> — likely a misconfigured IIS deployment.</p>
+        <details>
+          <summary class="text-primary small mb-2">▶ Show exploit details &amp; remediation</summary>
+          <div class="row g-3 mt-1">
+            <div class="col-md-6">
+              <div class="small text-muted fw-semibold mb-1"><i class="bi bi-lightning-charge-fill text-danger me-1"></i>ATTACK CHAIN</div>
+              <div class="path-chain small">1. Compromise WEB-SRV-01 (web vuln, local priv-esc)<br>2. Run: Rubeus.exe monitor /interval:5 /nowrap<br>3. Coerce DC auth: SpoolSample.exe DC01 WEB-SRV-01<br>4. Capture DC01$ TGT → Pass-The-Ticket → DCSync</div>
+            </div>
+            <div class="col-md-6">
+              <div class="remediation-step">
+                <div class="small text-success fw-semibold mb-1"><i class="bi bi-tools me-1"></i>SAFE REMEDIATION (Risk: LOW)</div>
+                <div class="small">1) Remove unconstrained delegation:<br><code>Set-ADComputer WEB-SRV-01 -TrustedForDelegation $false</code><br>2) If IIS needs impersonation, configure Constrained Delegation to specific SPNs only.<br>3) Reboot is NOT required. Change is immediate in AD.</div>
+              </div>
+            </div>
+          </div>
+        </details>
+      </div>
+      <div class="text-end ms-3 flex-shrink-0">
+        <div class="display-6 fw-bold text-danger">92</div>
+        <div class="small text-muted">risk score</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Critical Finding 3: GenericAll on Domain Admins -->
+  <div class="card finding-card critical mb-3 p-3">
+    <div class="d-flex justify-content-between align-items-start">
+      <div class="flex-grow-1">
+        <h6 class="fw-bold mb-1">
+          <span class="badge badge-critical me-2">CRITICAL</span>
+          GenericAll ACE on Domain Admins: CONTOSO\helpdesk-lead
+          <a href="https://attack.mitre.org/techniques/T1484/001/" target="_blank" class="badge bg-dark text-decoration-none ms-1">T1484.001</a>
+        </h6>
+        <p class="text-muted small mb-2">User <code>helpdesk-lead</code> has <strong>GenericAll</strong> rights on the <em>Domain Admins</em> group. This grants full control — the user can add themselves or any account to Domain Admins without any further privilege escalation steps.</p>
+        <details>
+          <summary class="text-primary small mb-2">▶ Show exploit details &amp; remediation</summary>
+          <div class="row g-3 mt-1">
+            <div class="col-md-6">
+              <div class="path-chain small">As helpdesk-lead:<br>Add-ADGroupMember -Identity "Domain Admins" -Members "helpdesk-lead"<br># OR using LDAP tools / BloodHound AddMember abuse</div>
+            </div>
+            <div class="col-md-6">
+              <div class="remediation-step">
+                <div class="small text-success fw-semibold mb-1"><i class="bi bi-tools me-1"></i>SAFE REMEDIATION (Risk: LOW)</div>
+                <div class="small">1) Identify who granted this ACE: Event ID 5136 in Security log on DC.<br>2) Remove: ADSI Edit → CN=Domain Admins,CN=Users,DC=contoso,DC=local → Properties → Security → remove helpdesk-lead.<br>3) Verify via: (Get-Acl "AD:\CN=Domain Admins…").Access | Where IdentityReference -match 'helpdesk'</div>
+              </div>
+            </div>
+          </div>
+        </details>
+      </div>
+      <div class="text-end ms-3 flex-shrink-0">
+        <div class="display-6 fw-bold text-danger">91</div>
+        <div class="small text-muted">risk score</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Remaining 2 critical collapsed -->
+  <div class="alert alert-danger d-flex align-items-center">
+    <i class="bi bi-exclamation-octagon-fill me-2 fs-5"></i>
+    <div>2 more critical findings: <strong>Privileged Kerberoastable svc-sqlcluster (score 90)</strong> and <strong>WriteDACL on Domain root by CONTOSO\exchange-servers (score 90)</strong>. See All Findings table below.</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ NEW THIS WEEK ═══════════════════════════════════ -->
+<div class="section-anchor" id="new-this-week"></div>
+<div class="mb-5">
+  <h2 class="h4 mb-3"><i class="bi bi-bell-fill text-warning me-2"></i>New This Week <span class="badge bg-warning text-dark ms-1">6 New</span></h2>
+  <div class="row g-3 mb-4">
+    <div class="col-md-3"><div class="card text-center p-3 border-danger"><div class="h2 fw-bold text-danger">4</div><div class="small">New Critical/High</div></div></div>
+    <div class="col-md-3"><div class="card text-center p-3 border-success"><div class="h2 fw-bold text-success">3</div><div class="small">Resolved This Week</div></div></div>
+    <div class="col-md-3"><div class="card text-center p-3"><div class="h2 fw-bold text-danger">+7</div><div class="small">Score Increase</div></div></div>
+    <div class="col-md-3"><div class="card text-center p-3"><div class="h2 fw-bold">2</div><div class="small">Modified Severity</div></div></div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-md-6">
+      <h6 class="fw-semibold text-danger"><i class="bi bi-plus-circle me-1"></i>New Findings Introduced</h6>
+      <div class="timeline-item new">
+        <div class="fw-semibold small"><span class="badge badge-critical">CRITICAL</span> Unconstrained Delegation: WEB-SRV-01</div>
+        <div class="text-muted" style="font-size:11px">Added June 9 — likely IIS deployment without delegation review</div>
+      </div>
+      <div class="timeline-item new">
+        <div class="fw-semibold small"><span class="badge badge-high">HIGH</span> New Kerberoastable: svc-backup@contoso.local</div>
+        <div class="text-muted" style="font-size:11px">SPN registered on backup service account June 8</div>
+      </div>
+      <div class="timeline-item new">
+        <div class="fw-semibold small"><span class="badge badge-high">HIGH</span> Shadow Admin: j.morrison (AdminCount=1, not in any priv group)</div>
+        <div class="text-muted" style="font-size:11px">Detected June 8 — SDProp protecting account post group removal</div>
+      </div>
+      <div class="timeline-item new">
+        <div class="fw-semibold small"><span class="badge badge-medium">MEDIUM</span> Password Never Expires: svc-monitoring (privileged)</div>
+        <div class="text-muted" style="font-size:11px">Account created June 7 with PasswordNeverExpires=True</div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <h6 class="fw-semibold text-success"><i class="bi bi-check-circle me-1"></i>Resolved This Week</h6>
+      <div class="timeline-item resolved">
+        <div class="fw-semibold small text-decoration-line-through text-muted">AS-REP Roastable: svc-legacy (pre-auth now enabled)</div>
+        <div class="text-muted" style="font-size:11px">Fixed June 8 by IT-Ops — pre-auth re-enabled</div>
+      </div>
+      <div class="timeline-item resolved">
+        <div class="fw-semibold small text-decoration-line-through text-muted">Stale Admin: t.baker (disabled after 210 days)</div>
+        <div class="text-muted" style="font-size:11px">Disabled June 7 — awaiting 30-day hold before deletion</div>
+      </div>
+      <div class="timeline-item resolved">
+        <div class="fw-semibold small text-decoration-line-through text-muted">Orphaned SID on OU=Finance ACL</div>
+        <div class="text-muted" style="font-size:11px">Cleaned up June 9 via quarterly ACL review</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ RISK TRENDS ═══════════════════════════════════ -->
+<div class="section-anchor" id="risk-trends"></div>
+<div class="mb-5">
+  <h2 class="h4 mb-3"><i class="bi bi-graph-up me-2 text-primary"></i>Risk Trends</h2>
+  <div class="row g-3">
+    <div class="col-md-6">
+      <div class="card p-3">
+        <div class="fw-semibold mb-2">Domain Risk Score — 8-Week Trend</div>
+        <canvas id="trendChart" height="130"></canvas>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card p-3">
+        <div class="fw-semibold mb-3">Week-over-Week Comparison</div>
+        <table class="table table-sm">
+          <thead><tr><th>Metric</th><th class="text-center">Previous</th><th class="text-center">Current</th><th class="text-center">Δ</th></tr></thead>
+          <tbody>
+            <tr><td>Domain Risk Score</td><td class="text-center">80</td><td class="text-center fw-bold text-danger">87</td><td class="text-center text-danger">↑ +7</td></tr>
+            <tr><td>Critical Findings</td><td class="text-center">3</td><td class="text-center fw-bold text-danger">5</td><td class="text-center text-danger">↑ +2</td></tr>
+            <tr><td>High Findings</td><td class="text-center">10</td><td class="text-center fw-bold">11</td><td class="text-center text-danger">↑ +1</td></tr>
+            <tr><td>Medium Findings</td><td class="text-center">21</td><td class="text-center fw-bold">18</td><td class="text-center text-success">↓ -3</td></tr>
+            <tr><td>Kerberoastable</td><td class="text-center">23</td><td class="text-center fw-bold">24</td><td class="text-center text-danger">↑ +1</td></tr>
+            <tr><td>Attack Paths</td><td class="text-center">14</td><td class="text-center fw-bold text-danger">19</td><td class="text-center text-danger">↑ +5</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ ATTACK PATHS ═══════════════════════════════════ -->
+<div class="section-anchor" id="attack-paths"></div>
+<div class="mb-5">
+  <h2 class="h4 mb-3"><i class="bi bi-diagram-3-fill text-danger me-2"></i>Attack Path Explorer <span class="badge badge-critical ms-1">19 Paths</span> <small class="text-muted fs-6 fw-normal ms-2">Click any path for full details</small></h2>
+
+  <div class="row g-2 mb-3">
+    <div class="col-md-2"><div class="card text-center p-2"><div class="h5 fw-bold text-danger">7</div><div class="small">Critical Paths</div></div></div>
+    <div class="col-md-2"><div class="card text-center p-2"><div class="h5 fw-bold" style="color:#fd7e14">8</div><div class="small">High Paths</div></div></div>
+    <div class="col-md-2"><div class="card text-center p-2"><div class="h5 fw-bold">19</div><div class="small">Total</div></div></div>
+    <div class="col-md-2"><div class="card text-center p-2"><div class="h5 fw-bold text-danger">2</div><div class="small">Shortest (hops)</div></div></div>
+    <div class="col-md-4"><div class="card text-center p-2"><div class="small fw-semibold">Top Source</div><div class="small text-danger">j.morrison → 4 paths to DA</div></div></div>
+  </div>
+
+  <!-- Path 1 -->
+  <div class="card finding-card critical mb-2 p-3" data-bs-toggle="modal" data-bs-target="#path1Modal" style="cursor:pointer">
+    <div class="d-flex justify-content-between align-items-center">
+      <div class="flex-grow-1 me-3">
+        <span class="badge badge-critical me-2">CRITICAL</span>
+        <span class="fw-semibold">j.morrison</span>
+        <i class="bi bi-arrow-right text-muted mx-1"></i>
+        <span class="fw-semibold text-danger">Domain Admins</span>
+        <span class="badge bg-secondary ms-2">2 hops</span>
+        <span class="badge bg-dark ms-1">T1098</span>
+        <span class="badge bg-warning text-dark new-badge ms-1">NEW</span>
+      </div>
+      <div class="text-end"><div class="fw-bold text-danger h5 mb-0">94</div><div class="small text-muted">score</div></div>
+    </div>
+    <div class="path-chain mt-2 small">
+      <span class="attack-path-node bg-primary text-white">👤 j.morrison</span>
+      <span class="attack-path-arrow">──[GenericAll]──▶</span>
+      <span class="attack-path-node bg-warning text-dark">👥 IT-Helpdesk</span>
+      <span class="attack-path-arrow">──[MemberOf]──▶</span>
+      <span class="attack-path-node bg-danger text-white">👑 Domain Admins</span>
+    </div>
+  </div>
+
+  <!-- Path 2 -->
+  <div class="card finding-card critical mb-2 p-3" data-bs-toggle="modal" data-bs-target="#path2Modal" style="cursor:pointer">
+    <div class="d-flex justify-content-between align-items-center">
+      <div class="flex-grow-1 me-3">
+        <span class="badge badge-critical me-2">CRITICAL</span>
+        <span class="fw-semibold">svc-azuread-sync</span>
+        <i class="bi bi-arrow-right text-muted mx-1"></i>
+        <span class="fw-semibold text-danger">Domain (DCSync)</span>
+        <span class="badge bg-secondary ms-2">1 hop</span>
+        <span class="badge bg-dark ms-1">T1003.006</span>
+      </div>
+      <div class="text-end"><div class="fw-bold text-danger h5 mb-0">95</div><div class="small text-muted">score</div></div>
+    </div>
+    <div class="path-chain mt-2 small">
+      <span class="attack-path-node bg-info text-white">⚙ svc-azuread-sync</span>
+      <span class="attack-path-arrow">──[DCSync Rights]──▶</span>
+      <span class="attack-path-node bg-danger text-white">🏛 Domain: contoso.local</span>
+    </div>
+  </div>
+
+  <!-- Path 3 -->
+  <div class="card finding-card critical mb-2 p-3" style="cursor:pointer">
+    <div class="d-flex justify-content-between align-items-center">
+      <div class="flex-grow-1 me-3">
+        <span class="badge badge-critical me-2">CRITICAL</span>
+        <span class="fw-semibold">Any Auth User</span>
+        <i class="bi bi-arrow-right text-muted mx-1"></i>
+        <span class="fw-semibold text-danger">Domain Admin via svc-sqlcluster</span>
+        <span class="badge bg-secondary ms-2">3 hops</span>
+        <span class="badge bg-dark ms-1">T1558.003</span>
+      </div>
+      <div class="text-end"><div class="fw-bold text-danger h5 mb-0">90</div><div class="small text-muted">score</div></div>
+    </div>
+    <div class="path-chain mt-2 small">
+      <span class="attack-path-node" style="background:#6c757d;color:#fff">🌐 Any Auth User</span>
+      <span class="attack-path-arrow">──[Kerberoast]──▶</span>
+      <span class="attack-path-node bg-warning text-dark">⚙ svc-sqlcluster (AdminCount=1)</span>
+      <span class="attack-path-arrow">──[MemberOf]──▶</span>
+      <span class="attack-path-node" style="background:#dc3545;color:#fff">👑 Domain Admins</span>
+    </div>
+  </div>
+
+  <!-- Path 4 High -->
+  <div class="card finding-card high mb-2 p-3" style="cursor:pointer">
+    <div class="d-flex justify-content-between align-items-center">
+      <div class="flex-grow-1 me-3">
+        <span class="badge badge-high me-2">HIGH</span>
+        <span class="fw-semibold">WEB-SRV-01$</span>
+        <i class="bi bi-arrow-right text-muted mx-1"></i>
+        <span class="fw-semibold">Domain Controllers (Printer Bug)</span>
+        <span class="badge bg-secondary ms-2">2 hops</span>
+        <span class="badge bg-dark ms-1">T1558.001</span>
+        <span class="badge bg-warning text-dark new-badge ms-1">NEW</span>
+      </div>
+      <div class="text-end"><div class="fw-bold h5 mb-0" style="color:#fd7e14">82</div><div class="small text-muted">score</div></div>
+    </div>
+    <div class="path-chain mt-2 small">
+      <span class="attack-path-node bg-secondary text-white">🖥 WEB-SRV-01$ (Unconstrained Deleg.)</span>
+      <span class="attack-path-arrow">──[Capture TGT]──▶</span>
+      <span class="attack-path-node bg-info text-white">🖧 DC01$ (coerced auth)</span>
+      <span class="attack-path-arrow">──[PTT → DCSync]──▶</span>
+      <span class="attack-path-node bg-danger text-white">🏛 Domain</span>
+    </div>
+  </div>
+
+  <div class="text-muted small mt-2"><i class="bi bi-info-circle me-1"></i>15 additional paths not shown. See Full Findings table for complete list.</div>
+</div>
+
+<!-- ═══════════════════════════════════ ALL FINDINGS TABLE ═══════════════════════════════════ -->
+<div class="section-anchor" id="all-findings"></div>
+<div class="mb-5">
+  <h2 class="h4 mb-3"><i class="bi bi-list-ul me-2"></i>All Findings (43)</h2>
+  <div class="table-responsive">
+    <table id="allFindingsTable" class="table table-sm table-hover">
+      <thead class="table-dark">
+        <tr><th>Severity</th><th>Score</th><th>Type</th><th>Title</th><th>Source Identity</th><th>Target</th><th>MITRE</th><th>New?</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><span class="badge badge-critical">Critical</span></td><td>95</td><td><code>DCSync</code></td><td>DCSync Rights: svc-azuread-sync</td><td>CONTOSO\svc-azuread-sync</td><td>Domain</td><td><span class="badge bg-dark">T1003.006</span></td><td></td></tr>
+        <tr><td><span class="badge badge-critical">Critical</span></td><td>92</td><td><code>UnconstrainedDelegation</code></td><td>Unconstrained Delegation: WEB-SRV-01</td><td>WEB-SRV-01$</td><td>Any Service</td><td><span class="badge bg-dark">T1558.001</span></td><td><span class="badge bg-warning text-dark">NEW</span></td></tr>
+        <tr><td><span class="badge badge-critical">Critical</span></td><td>91</td><td><code>GenericAll</code></td><td>GenericAll on Domain Admins: helpdesk-lead</td><td>CONTOSO\helpdesk-lead</td><td>Domain Admins</td><td><span class="badge bg-dark">T1484.001</span></td><td></td></tr>
+        <tr><td><span class="badge badge-critical">Critical</span></td><td>90</td><td><code>Kerberoasting</code></td><td>Kerberoastable Privileged: svc-sqlcluster</td><td>Any Auth User</td><td>svc-sqlcluster</td><td><span class="badge bg-dark">T1558.003</span></td><td></td></tr>
+        <tr><td><span class="badge badge-critical">Critical</span></td><td>90</td><td><code>WriteDACL</code></td><td>WriteDACL on Domain: EXCHANGE-SERVERS</td><td>CONTOSO\exchange-servers</td><td>Domain Root</td><td><span class="badge bg-dark">T1222</span></td><td></td></tr>
+        <tr><td><span class="badge badge-high">High</span></td><td>82</td><td><code>UnconstrainedDelegation</code></td><td>Unconstrained Delegation: APP-SRV-03</td><td>APP-SRV-03$</td><td>Any Service</td><td><span class="badge bg-dark">T1558.001</span></td><td></td></tr>
+        <tr><td><span class="badge badge-high">High</span></td><td>78</td><td><code>ShadowAdmin</code></td><td>Shadow Admin: j.morrison</td><td>CONTOSO\j.morrison</td><td>Privileged Resources</td><td><span class="badge bg-dark">T1078.002</span></td><td><span class="badge bg-warning text-dark">NEW</span></td></tr>
+        <tr><td><span class="badge badge-high">High</span></td><td>75</td><td><code>GenericWrite</code></td><td>GenericWrite on GPO: Workstation Baseline</td><td>CONTOSO\IT-Desktop</td><td>GPO-WKS-BASELINE</td><td><span class="badge bg-dark">T1098</span></td><td></td></tr>
+        <tr><td><span class="badge badge-high">High</span></td><td>72</td><td><code>SIDHistory</code></td><td>SID History: r.chen (old domain SID)</td><td>CONTOSO\r.chen</td><td>Cross-Domain Resources</td><td><span class="badge bg-dark">T1134.005</span></td><td></td></tr>
+        <tr><td><span class="badge badge-high">High</span></td><td>70</td><td><code>Kerberoasting</code></td><td>Kerberoastable: svc-backup</td><td>Any Auth User</td><td>svc-backup</td><td><span class="badge bg-dark">T1558.003</span></td><td><span class="badge bg-warning text-dark">NEW</span></td></tr>
+        <tr><td><span class="badge badge-high">High</span></td><td>68</td><td><code>ASREPRoasting</code></td><td>AS-REP Roastable: svc-oldapp</td><td>Unauthenticated</td><td>svc-oldapp</td><td><span class="badge bg-dark">T1558.004</span></td><td></td></tr>
+        <tr><td><span class="badge badge-medium">Medium</span></td><td>58</td><td><code>ConstrainedDelegation</code></td><td>Constrained Delegation (Protocol Transition): svc-iis</td><td>svc-iis</td><td>CIFS/FILESERVER01</td><td><span class="badge bg-dark">T1558.001</span></td><td></td></tr>
+        <tr><td><span class="badge badge-medium">Medium</span></td><td>48</td><td><code>DormantPrivilegedAccount</code></td><td>Dormant Admin: a.williams (47 days)</td><td>CONTOSO\a.williams</td><td>Privileged Resources</td><td><span class="badge bg-dark">T1078.002</span></td><td></td></tr>
+        <tr><td><span class="badge badge-medium">Medium</span></td><td>40</td><td><code>PasswordNeverExpires</code></td><td>Password Never Expires (Privileged): svc-monitoring</td><td>CONTOSO\svc-monitoring</td><td>N/A</td><td><span class="badge bg-dark">T1078</span></td><td><span class="badge bg-warning text-dark">NEW</span></td></tr>
+        <tr><td><span class="badge badge-low">Low</span></td><td>22</td><td><code>CircularGroupMembership</code></td><td>Circular Group: IT-Support → IT-Helpdesk → IT-Support</td><td>IT-Support</td><td>IT-Support</td><td><span class="badge bg-dark">T1078.002</span></td><td></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ DCSync ═══════════════════════════════════ -->
+<div class="section-anchor" id="dcsync"></div>
+<div class="mb-5">
+  <h2 class="h4 mb-3"><i class="bi bi-arrow-repeat text-danger me-2"></i>DCSync Exposure <span class="badge badge-critical ms-1">3 accounts</span></h2>
+  <div class="alert alert-danger"><i class="bi bi-exclamation-octagon-fill me-2"></i><strong>DCSync allows replication of ALL credential hashes.</strong> Only Domain Controllers and Azure AD Connect (DS-Replication-Get-Changes only, not Get-Changes-All) should hold these rights.</div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover">
+      <thead class="table-dark"><tr><th>Identity</th><th>Rights Held</th><th>Full DCSync?</th><th>Risk</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td><code>CONTOSO\svc-azuread-sync</code></td><td>Get-Changes, <strong>Get-Changes-All</strong></td><td><span class="badge badge-critical">YES — Full</span></td><td>Critical</td><td>Azure AD Connect account. Get-Changes-All is excessive — only Get-Changes needed.</td></tr>
+        <tr><td><code>CONTOSO\exchange-servers</code></td><td>Get-Changes</td><td><span class="badge badge-high">Partial</span></td><td>High</td><td>Legacy Exchange. Partial replication — review if still needed.</td></tr>
+        <tr><td><code>CONTOSO\MSOL_8a3f2b</code></td><td>Get-Changes</td><td><span class="badge badge-high">Partial</span></td><td>High</td><td>Old Azure AD Connect residual. Verify if service is still active.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ KERBEROASTING ═══════════════════════════════════ -->
+<div class="section-anchor" id="kerberoasting"></div>
+<div class="mb-5">
+  <h2 class="h4 mb-3"><i class="bi bi-ticket-fill text-warning me-2"></i>Kerberoasting Exposure <span class="badge badge-high ms-1">24 accounts</span></h2>
+  <div class="alert alert-warning"><i class="bi bi-info-circle me-2"></i>Any authenticated domain user can request a TGS for these accounts and crack it offline. Privileged accounts are highest priority.</div>
+  <div class="table-responsive">
+    <table id="kerbTable" class="table table-sm table-hover">
+      <thead class="table-dark"><tr><th>Account</th><th>SPNs</th><th>Password Last Set</th><th>Days Since Reset</th><th>Privilege Level</th></tr></thead>
+      <tbody>
+        <tr><td><strong>svc-sqlcluster</strong></td><td>MSSQLSvc/SQL01.contoso.local:1433</td><td>2021-03-14</td><td class="text-danger fw-bold">1184</td><td><span class="badge badge-critical">DA Member</span></td></tr>
+        <tr><td>svc-iis-prod</td><td>HTTP/web01.contoso.local</td><td>2022-08-01</td><td class="text-danger">682</td><td><span class="badge badge-high">AdminCount=1</span></td></tr>
+        <tr><td>svc-backup</td><td>backup/BACKUP-SRV01</td><td>2024-01-15</td><td class="text-warning">147</td><td><span class="badge badge-medium">Standard</span></td></tr>
+        <tr><td>svc-sccm</td><td>SMS/SCCM01.contoso.local</td><td>2023-06-20</td><td class="text-warning">356</td><td><span class="badge badge-medium">Standard</span></td></tr>
+        <tr><td>svc-vmware</td><td>vmware/VC01.contoso.local</td><td>2022-11-30</td><td class="text-danger">562</td><td><span class="badge badge-high">High-Value Target</span></td></tr>
+        <tr><td colspan="5" class="text-muted text-center small fst-italic">+ 19 more accounts — see Excel export for full list</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ SHADOW ADMINS ═══════════════════════════════════ -->
+<div class="section-anchor" id="shadow-admins"></div>
+<div class="mb-5">
+  <h2 class="h4 mb-3"><i class="bi bi-incognito text-warning me-2"></i>Shadow Admin Report <span class="badge badge-high ms-1">5 accounts</span></h2>
+  <div class="alert alert-warning"><i class="bi bi-info-circle me-2"></i>These accounts have <code>AdminCount=1</code> (protected by SDProp) but do not appear in any standard privileged group. They may have legacy ACE grants invisible in normal group browsing.</div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover">
+      <thead class="table-dark"><tr><th>Account</th><th>Last Logon</th><th>Reason</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td><strong>j.morrison</strong></td><td>2026-06-09</td><td>AdminCount=1, removed from Domain Admins June 8 but SDProp not reset</td><td><span class="badge badge-high">Reset AdminCount + audit ACLs</span></td></tr>
+        <tr><td>svc-legacyapp</td><td>2025-11-03</td><td>AdminCount=1, no group membership found. Account from 2019 migration.</td><td><span class="badge badge-high">Investigate + disable if unused</span></td></tr>
+        <tr><td>backup-operator01</td><td>2026-05-14</td><td>Removed from Backup Operators, AdminCount not cleared. Direct ACE on DC01.</td><td><span class="badge badge-high">Remove direct ACE + clear AdminCount</span></td></tr>
+        <tr><td>svc-monitoring</td><td>2026-06-08</td><td>Has direct GenericRead+WriteDACL on AdminSDHolder CN</td><td><span class="badge badge-critical">Immediate investigation</span></td></tr>
+        <tr><td>d.wilson</td><td>2026-01-22</td><td>AdminCount=1, last in Schema Admins 2023. Account still active.</td><td><span class="badge badge-medium">Clear AdminCount if no longer needed</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ DELEGATION ═══════════════════════════════════ -->
+<div class="section-anchor" id="delegation"></div>
+<div class="mb-5">
+  <h2 class="h4 mb-3"><i class="bi bi-arrow-left-right text-warning me-2"></i>Delegation Risks <span class="badge badge-high ms-1">16 findings</span></h2>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover">
+      <thead class="table-dark"><tr><th>Type</th><th>Object</th><th>Object Type</th><th>Delegates To</th><th>Risk</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge badge-critical">Unconstrained</span></td><td>WEB-SRV-01$</td><td>Computer</td><td>ANY service</td><td>Critical</td></tr>
+        <tr><td><span class="badge badge-critical">Unconstrained</span></td><td>APP-SRV-03$</td><td>Computer</td><td>ANY service</td><td>Critical</td></tr>
+        <tr><td><span class="badge badge-high">Constrained (Any Protocol)</span></td><td>svc-iis</td><td>User</td><td>CIFS/FILESERVER01</td><td>High — protocol transition enables impersonation</td></tr>
+        <tr><td><span class="badge badge-high">Constrained (Any Protocol)</span></td><td>svc-webapp</td><td>User</td><td>MSSQLSvc/SQL01</td><td>High</td></tr>
+        <tr><td><span class="badge badge-medium">RBCD</span></td><td>APP-SRV-05$</td><td>Computer</td><td>Configured via msDS-AllowedToActOnBehalfOfOtherIdentity</td><td>Medium</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ DOMAIN CONTROLLERS ═══════════════════════════════════ -->
+<div class="section-anchor" id="domain-controllers"></div>
+<div class="mb-5">
+  <h2 class="h4 mb-3"><i class="bi bi-server text-info me-2"></i>Domain Controller Exposure</h2>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover">
+      <thead class="table-dark"><tr><th>DC Name</th><th>IP Address</th><th>OS</th><th>Site</th><th>Roles</th><th>Flags</th></tr></thead>
+      <tbody>
+        <tr><td><strong>DC01.contoso.local</strong></td><td>10.0.0.10</td><td>Windows Server 2022</td><td>HQ-Site</td><td>PDC, RID, Infrastructure</td><td><span class="badge bg-info">GC</span></td></tr>
+        <tr><td>DC02.contoso.local</td><td>10.0.0.11</td><td>Windows Server 2022</td><td>HQ-Site</td><td>—</td><td><span class="badge bg-info">GC</span></td></tr>
+        <tr><td>DC03.contoso.local</td><td>10.10.5.10</td><td>Windows Server 2019</td><td>DR-Site</td><td>—</td><td><span class="badge bg-info">GC</span></td></tr>
+        <tr><td>RODC01.contoso.local</td><td>10.20.1.5</td><td>Windows Server 2019</td><td>Branch-NYC</td><td>—</td><td><span class="badge bg-secondary">RODC</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ REMEDIATION DASHBOARD ═══════════════════════════════════ -->
+<div class="section-anchor" id="remediation"></div>
+<div class="mb-5">
+  <h2 class="h4 mb-3"><i class="bi bi-tools text-success me-2"></i>Remediation Dashboard</h2>
+  <div class="alert alert-info mb-4"><i class="bi bi-info-circle me-2"></i>All steps are designed for <strong>zero or minimal operational risk</strong>. Each includes a risk rating, the exact PowerShell command, and technical justification. <strong>Always test changes in a non-production environment first.</strong></div>
+
+  <!-- Remediation Item 1 -->
+  <div class="card finding-card critical mb-3 p-3">
+    <div class="d-flex justify-content-between align-items-start mb-2">
+      <h6 class="mb-0 fw-bold"><i class="bi bi-exclamation-octagon-fill text-danger me-2"></i>DCSync: svc-azuread-sync has DS-Replication-Get-Changes-All</h6>
+      <span class="badge badge-critical ms-2">CRITICAL | Score 95</span>
+    </div>
+    <div class="row g-3">
+      <div class="col-md-4">
+        <div class="small text-muted fw-semibold">WHAT IS THE RISK?</div>
+        <div class="small">Full credential replication capability. Can dump all hashes including KRBTGT.</div>
+        <div class="small mt-2 text-muted fw-semibold">WHY IS IT THERE?</div>
+        <div class="small">Azure AD Connect misconfiguration — express setup grants DS-Replication-Get-Changes-All unnecessarily. Only DS-Replication-Get-Changes is required for Password Hash Sync.</div>
+      </div>
+      <div class="col-md-4">
+        <div class="small text-muted fw-semibold">MITRE: T1003.006 — DCSync</div>
+        <div class="path-chain small mt-1">mimikatz # lsadump::dcsync /user:krbtgt /domain:contoso.local</div>
+      </div>
+      <div class="col-md-4">
+        <div class="remediation-step">
+          <div class="small text-success fw-semibold mb-1"><i class="bi bi-check-circle me-1"></i>Remediation Steps — Risk: LOW</div>
+          <div class="small">
+            <strong>Option A (Preferred):</strong> Re-run Azure AD Connect Express Setup wizard — it will reset permissions to minimum required.<br><br>
+            <strong>Option B (Manual):</strong><br>
+            <code style="font-size:10px">$acl = Get-Acl "AD:\DC=contoso,DC=local"<br>
+            $ace = $acl.Access | Where-Object {<br>
+              $_.IdentityReference -match "svc-azuread-sync" -and<br>
+              $_.ObjectType -eq [Guid]"1131f6ab-..."<br>
+            }<br>
+            $acl.RemoveAccessRule($ace)<br>
+            Set-Acl -Path "AD:\DC=contoso,DC=local" -AclObject $acl</code>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Remediation Item 2 -->
+  <div class="card finding-card critical mb-3 p-3">
+    <div class="d-flex justify-content-between align-items-start mb-2">
+      <h6 class="mb-0 fw-bold"><i class="bi bi-exclamation-octagon-fill text-danger me-2"></i>Unconstrained Delegation: WEB-SRV-01 (New This Week)</h6>
+      <span class="badge badge-critical ms-2">CRITICAL | Score 92</span>
+    </div>
+    <div class="row g-3">
+      <div class="col-md-4">
+        <div class="small text-muted fw-semibold">ROOT CAUSE</div>
+        <div class="small">Likely set during IIS Application Pool deployment. The installer may have automatically set TrustedForDelegation without administrator review.</div>
+      </div>
+      <div class="col-md-4">
+        <div class="small text-muted fw-semibold">IMPACT</div>
+        <div class="small">Any user who authenticates to WEB-SRV-01 (including a Domain Admin browsing a web app) has their TGT exposed. Combined with the Printer Bug, this is a one-step path to DCSync.</div>
+      </div>
+      <div class="col-md-4">
+        <div class="remediation-step">
+          <div class="small text-success fw-semibold mb-1"><i class="bi bi-check-circle me-1"></i>Remediation — Risk: LOW (no reboot required)</div>
+          <div class="small">
+            <code style="font-size:10px">Set-ADComputer -Identity "WEB-SRV-01" -TrustedForDelegation $false</code><br><br>
+            Then configure Constrained Delegation if IIS truly needs impersonation:<br>
+            <code style="font-size:10px">Set-ADComputer "WEB-SRV-01" -Add @{"msDS-AllowedToDelegateTo"="HTTP/WEB-SRV-01"}</code>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Remediation Item 3 -->
+  <div class="card finding-card high mb-3 p-3">
+    <div class="d-flex justify-content-between align-items-start mb-2">
+      <h6 class="mb-0 fw-bold"><i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>Kerberoastable Privileged: svc-sqlcluster (password 1,184 days old)</h6>
+      <span class="badge badge-high ms-2">HIGH | Score 90</span>
+    </div>
+    <div class="row g-3">
+      <div class="col-md-4">
+        <div class="small text-muted fw-semibold">ROOT CAUSE</div>
+        <div class="small">Service account with SPN and a 3+ year old password. Member of Domain Admins — this is the highest-priority Kerberoastable target in the domain.</div>
+      </div>
+      <div class="col-md-4">
+        <div class="small text-muted fw-semibold">EXPLOIT</div>
+        <div class="path-chain small">Rubeus.exe kerberoast /user:svc-sqlcluster /nowrap<br>hashcat -m 13100 hash.txt rockyou.txt</div>
+      </div>
+      <div class="col-md-4">
+        <div class="remediation-step">
+          <div class="small text-success fw-semibold mb-1"><i class="bi bi-check-circle me-1"></i>Remediation — Risk: MEDIUM (service restart required)</div>
+          <div class="small">
+            <strong>Step 1:</strong> Migrate to Group Managed Service Account (gMSA) — eliminates Kerberoastability permanently.<br>
+            <code style="font-size:10px">New-ADServiceAccount -Name "gMSA-sql" -DNSHostName "SQL01.contoso.local"<br>
+            Install-ADServiceAccount "gMSA-sql"</code><br><br>
+            <strong>If gMSA not possible:</strong> Reset to 25+ char random password immediately. Set AES256 encryption to increase cracking difficulty:<br>
+            <code style="font-size:10px">Set-ADUser svc-sqlcluster -KerberosEncryptionType AES256</code>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /main-content -->
+
+<!-- ───── Path 1 Modal ───── -->
+<div class="modal fade" id="path1Modal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header" style="background:#1a1a2e;color:#fff">
+        <h5 class="modal-title"><i class="bi bi-diagram-3 me-2"></i>Attack Path — j.morrison → Domain Admins (2 hops)</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-12">
+            <div class="path-chain p-3 fs-6">
+              <span class="attack-path-node bg-primary text-white me-2">👤 User: j.morrison</span>
+              <span class="attack-path-arrow">─── GenericAll ACE ───▶</span>
+              <span class="attack-path-node bg-warning text-dark mx-2">👥 Group: IT-Helpdesk</span>
+              <span class="attack-path-arrow">─── MemberOf (Nested) ───▶</span>
+              <span class="attack-path-node bg-danger text-white ms-2">👑 Group: Domain Admins</span>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <h6 class="fw-semibold">Exploit Steps</h6>
+            <ol class="small">
+              <li class="mb-2"><strong>Compromise j.morrison</strong> — phishing, credential stuffing, or AS-REP roast if pre-auth disabled. Account is a shadow admin (AdminCount=1) making it a high-value target.</li>
+              <li class="mb-2"><strong>Abuse GenericAll on IT-Helpdesk</strong> — Add any account to IT-Helpdesk:<br><code>Add-ADGroupMember -Identity "IT-Helpdesk" -Members "attacker-account"</code></li>
+              <li class="mb-2"><strong>Inherit Domain Admin via Nested Group</strong> — IT-Helpdesk is nested in Domain Admins (verified via recursive membership). Attacker now has full DA rights.</li>
+            </ol>
+            <div class="small mt-2"><strong>MITRE:</strong> <a href="https://attack.mitre.org/techniques/T1098/" target="_blank" class="badge bg-dark text-decoration-none">T1098</a> Account Manipulation → Privilege Escalation</div>
+          </div>
+          <div class="col-md-6">
+            <h6 class="fw-semibold">Root Cause</h6>
+            <div class="small mb-2">GenericAll ACE on IT-Helpdesk group was likely granted to j.morrison for "helpdesk management" but the group is nested in Domain Admins — a misconfiguration that creates a 2-hop DA path.</div>
+            <div class="remediation-step">
+              <div class="text-success fw-semibold small mb-1"><i class="bi bi-tools me-1"></i>Remediation — Risk: LOW</div>
+              <div class="small">
+                <strong>Priority 1:</strong> Remove j.morrison's GenericAll ACE on IT-Helpdesk:<br>
+                <code style="font-size:11px">$acl = Get-Acl "AD:\CN=IT-Helpdesk,OU=Groups,DC=contoso,DC=local"<br>
+                $ace = $acl.Access | Where IdentityReference -match "j.morrison"<br>
+                $acl.RemoveAccessRule($ace); Set-Acl ...</code><br><br>
+                <strong>Priority 2:</strong> Remove IT-Helpdesk nesting from Domain Admins — standard helpdesk should not be in DA.<br>
+                <code style="font-size:11px">Remove-ADGroupMember -Identity "Domain Admins" -Members "IT-Helpdesk"</code>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ───── Path 2 Modal ───── -->
+<div class="modal fade" id="path2Modal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header" style="background:#1a1a2e;color:#fff">
+        <h5 class="modal-title"><i class="bi bi-diagram-3 me-2"></i>Attack Path — svc-azuread-sync → DCSync (1 hop)</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="path-chain p-3 mb-3">
+          <span class="attack-path-node bg-info text-white me-2">⚙ svc-azuread-sync</span>
+          <span class="attack-path-arrow">─── DS-Replication-Get-Changes-All ───▶</span>
+          <span class="attack-path-node bg-danger text-white ms-2">🏛 Domain: contoso.local (All hashes)</span>
+        </div>
+        <div class="alert alert-danger small"><strong>This is a 1-hop critical path.</strong> Compromising one service account credential gives an attacker full domain credential replication — no lateral movement required.</div>
+        <div class="remediation-step mt-2">
+          <div class="text-success fw-semibold small mb-1"><i class="bi bi-tools me-1"></i>Immediate Actions Required</div>
+          <div class="small">1) Re-run Azure AD Connect wizard to reset permissions. 2) Rotate svc-azuread-sync password immediately. 3) Enable MFA on account via Azure AD Conditional Access. 4) Alert on Event ID 4662 (directory service access) from this account to any non-DC source.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────── SCRIPTS ─────────────── -->
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.7/js/dataTables.bootstrap5.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+// Dark mode
+const darkBtn = document.getElementById('darkModeToggle');
+function setTheme(dark) {
+  document.documentElement.setAttribute('data-bs-theme', dark ? 'dark' : 'light');
+  darkBtn.innerHTML = dark ? '<i class="bi bi-sun-fill"></i>' : '<i class="bi bi-moon-fill"></i>';
+  localStorage.setItem('ad-dark', dark);
+}
+setTheme(localStorage.getItem('ad-dark') === 'true');
+darkBtn.addEventListener('click', () => setTheme(document.documentElement.getAttribute('data-bs-theme') !== 'dark'));
+
+// Sidebar toggle
+document.getElementById('sidebarToggle').addEventListener('click', function() {
+  document.getElementById('sidebar').classList.toggle('collapsed');
+  document.getElementById('mainContent').classList.toggle('expanded');
+});
+
+// Active nav on scroll
+const sections = document.querySelectorAll('.section-anchor');
+window.addEventListener('scroll', () => {
+  let cur = '';
+  sections.forEach(s => { if (window.pageYOffset >= s.offsetTop - 80) cur = s.id; });
+  document.querySelectorAll('.sidebar .nav-link').forEach(l => {
+    l.classList.remove('active');
+    if (l.getAttribute('href') === '#' + cur) l.classList.add('active');
+  });
+});
+
+// DataTables
+$(function() {
+  $('#allFindingsTable, #kerbTable').DataTable({ pageLength: 10, responsive: true });
+});
+
+// Charts
+const sevCtx = document.getElementById('severityChart');
+new Chart(sevCtx, {
+  type: 'doughnut',
+  data: {
+    labels: ['Critical (5)', 'High (11)', 'Medium (18)', 'Low (9)'],
+    datasets: [{ data: [5, 11, 18, 9],
+      backgroundColor: ['#dc3545','#fd7e14','#ffc107','#28a745'],
+      borderWidth: 2, borderColor: '#fff' }]
+  },
+  options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } } }
+});
+
+const trendCtx = document.getElementById('trendChart');
+new Chart(trendCtx, {
+  type: 'line',
+  data: {
+    labels: ['Apr 22', 'Apr 29', 'May 6', 'May 13', 'May 20', 'May 27', 'Jun 3', 'Jun 10'],
+    datasets: [{
+      label: 'Risk Score',
+      data: [62, 65, 71, 68, 74, 78, 80, 87],
+      borderColor: '#dc3545', backgroundColor: 'rgba(220,53,69,.12)',
+      pointRadius: 5, pointBackgroundColor: '#dc3545', fill: true, tension: 0.4
+    }]
+  },
+  options: {
+    responsive: true,
+    scales: { y: { min: 0, max: 100, ticks: { callback: v => v } } },
+    plugins: { legend: { display: false },
+      annotation: { annotations: { line1: { type: 'line', yMin: 90, yMax: 90, borderColor: '#dc3545', borderWidth: 1, borderDash: [4,4], label: { display: true, content: 'Critical (90)', position: 'end', font: { size: 10 } } } } }
+    }
+  }
+});
+
+// Global search
+document.getElementById('globalSearch').addEventListener('keyup', function() {
+  const t = this.value.toLowerCase();
+  document.querySelectorAll('.finding-card').forEach(c => {
+    c.style.display = (!t || c.textContent.toLowerCase().includes(t)) ? '' : 'none';
+  });
+});
+
+// CSV export
+document.getElementById('exportCsvBtn').addEventListener('click', function(e) {
+  e.preventDefault();
+  const h = ['Severity','Score','Type','Title','Source','Target','MITRE','New'];
+  const rows = [h];
+  document.querySelectorAll('#allFindingsTable tbody tr').forEach(tr => {
+    rows.push(Array.from(tr.querySelectorAll('td')).map(td => '"' + td.textContent.trim().replace(/"/g,'""') + '"'));
+  });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([rows.map(r=>r.join(',')).join('\n')], {type:'text/csv'}));
+  a.download = 'contoso-ad-findings.csv'; a.click();
+});
+</script>
+</body>
+</html>
