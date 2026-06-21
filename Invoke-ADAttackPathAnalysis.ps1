@@ -1,5 +1,4 @@
 #Requires -Version 5.1
-#Requires -RunAsAdministrator
 <#
 .SYNOPSIS
     Main entry point for the AD Attack Path Analysis and Identity Exposure Reporting Platform.
@@ -131,15 +130,47 @@ Write-Log "Domain: $($config.General.OrganizationName)"  -Level INFO
 
 #endregion
 
-#region Execution Context
+#region Execution Context and Credential Resolution
 
-if (-not $AutoRun) {
-    $adModule = Get-Module -Name ActiveDirectory -ListAvailable
-    if (-not $adModule) {
-        Write-Log "ActiveDirectory module not found. Install RSAT: Install-WindowsFeature RSAT-AD-PowerShell" -Level CRITICAL
-        throw "ActiveDirectory PowerShell module required."
+$adModule = Get-Module -Name ActiveDirectory -ListAvailable
+if (-not $adModule) {
+    Write-Log "ActiveDirectory module not found. Install RSAT: Install-WindowsFeature RSAT-AD-PowerShell" -Level CRITICAL
+    throw "ActiveDirectory PowerShell module required."
+}
+
+# ── Credential resolution chain ───────────────────────────────────────────────
+# Priority: 1) -Credential parameter  2) gMSA (auto)  3) Credential Manager  4) Current user context
+if (-not $Credential) {
+
+    # 2. Running as a Group Managed Service Account — no credential needed
+    $isGMSA = Test-IsGroupManagedServiceAccount
+    if ($isGMSA) {
+        Write-Log "Running as gMSA — no explicit credential required. AD queries will use machine identity." -Level SUCCESS
+    }
+
+    # 3. Try Windows Credential Manager (works headlessly in scheduled tasks)
+    elseif ($config.Credentials.UseCurrentContext -eq $false -and $config.Credentials.CredentialManagerTarget) {
+        Write-Log "Loading credential from Windows Credential Manager: '$($config.Credentials.CredentialManagerTarget)'" -Level INFO
+        $Credential = Get-CredentialFromVault -Target $config.Credentials.CredentialManagerTarget
+        if ($Credential) {
+            Write-Log "Credential loaded: $($Credential.UserName)" -Level SUCCESS
+        } else {
+            Write-Log "Credential not found in vault. Falling back to current user context." -Level WARNING
+        }
+    }
+
+    # 4. Current user context (interactive sessions, or when running as a domain service account)
+    else {
+        $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+        Write-Log "Using current user context: $currentUser" -Level INFO
     }
 }
+else {
+    Write-Log "Using explicitly supplied credential: $($Credential.UserName)" -Level INFO
+}
+
+Write-Log "Target domain: $(if($config.General.TargetDomain){$config.General.TargetDomain}else{'auto-discover from current context'})" -Level INFO
+Write-Log "Preferred DC:  $(if($config.General.DomainControllers.Count -gt 0){$config.General.DomainControllers -join ', '}else{'PDC Emulator (auto)'})" -Level INFO
 
 #endregion
 

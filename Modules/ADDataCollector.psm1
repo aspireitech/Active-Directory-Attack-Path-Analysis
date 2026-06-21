@@ -16,18 +16,38 @@ function Invoke-ADDataCollection {
         [System.Management.Automation.PSCredential]$Credential
     )
 
+    # ── Build base AD parameter hashtable ────────────────────────────────────
     $adParams = @{ ErrorAction = 'Stop' }
     if ($Credential) { $adParams.Credential = $Credential }
 
+    # ── Determine target Domain Controller ────────────────────────────────────
+    # Priority: 1) Config explicit DC list  2) PDC Emulator (auto)  3) KDC from DNS
+    $targetServer = Resolve-TargetDomainController -Config $Config -Credential $Credential
+    if ($targetServer) {
+        $adParams.Server = $targetServer
+        Write-Log "Targeting Domain Controller: $targetServer" -Level INFO -Component ADCollector
+    }
+
     try {
-        $domain    = Get-ADDomain @adParams
-        $forest    = Get-ADForest @adParams
+        $domain = Get-ADDomain @adParams
+        $forest = Get-ADForest @adParams
     } catch {
         Write-Log "Failed to connect to Active Directory: $_" -Level CRITICAL -Component ADCollector
         throw
     }
 
-    Write-Log "Connected to domain: $($domain.DNSRoot)" -Level INFO -Component ADCollector
+    # If we auto-selected, confirm the PDC emulator is being used
+    if (-not $targetServer) {
+        # Fall back to the PDC emulator of the discovered domain for consistency
+        try {
+            $adParams.Server = $domain.PDCEmulator
+            Write-Log "Auto-selected PDC Emulator: $($domain.PDCEmulator)" -Level INFO -Component ADCollector
+        } catch {
+            Write-Log "Could not resolve PDC Emulator — using default DC from DNS." -Level WARNING -Component ADCollector
+        }
+    }
+
+    Write-Log "Connected to domain: $($domain.DNSRoot) via $($adParams.Server)" -Level INFO -Component ADCollector
 
     $result = [ordered]@{
         CollectionTime        = Get-Date -Format 'o'
@@ -1168,7 +1188,166 @@ function Find-CircularGroupMemberships {
 
 #endregion
 
+#region DC Resolution and Credential Helpers
+
+function Resolve-TargetDomainController {
+    <#
+    .SYNOPSIS
+        Selects the best Domain Controller to use for all AD queries.
+        Priority: config explicit list → PDC Emulator auto-discovery → DNS default.
+    #>
+    [CmdletBinding()]
+    param(
+        [hashtable]$Config,
+        [System.Management.Automation.PSCredential]$Credential
+    )
+
+    # 1. Config has explicit DC list — try first reachable one
+    if ($Config.General.DomainControllers -and $Config.General.DomainControllers.Count -gt 0) {
+        foreach ($dc in $Config.General.DomainControllers) {
+            if (Test-Connection -ComputerName $dc -Count 1 -Quiet -ErrorAction SilentlyContinue) {
+                Write-Log "Using config-specified DC: $dc" -Level INFO -Component ADCollector
+                return $dc
+            } else {
+                Write-Log "Config DC unreachable: $dc" -Level WARNING -Component ADCollector
+            }
+        }
+        Write-Log "All config-specified DCs unreachable. Falling back to PDC Emulator." -Level WARNING -Component ADCollector
+    }
+
+    # 2. Auto-discover PDC Emulator (authoritative, always current)
+    try {
+        $tempParams = @{ ErrorAction = 'Stop' }
+        if ($Credential) { $tempParams.Credential = $Credential }
+        if ($Config.General.TargetDomain) { $tempParams.Identity = $Config.General.TargetDomain }
+
+        $domain = Get-ADDomain @tempParams
+        $pdc    = $domain.PDCEmulator
+        if ($pdc -and (Test-Connection -ComputerName $pdc -Count 1 -Quiet -ErrorAction SilentlyContinue)) {
+            Write-Log "Auto-selected PDC Emulator: $pdc" -Level INFO -Component ADCollector
+            return $pdc
+        }
+    } catch {
+        Write-Log "PDC Emulator discovery failed: $_" -Level WARNING -Component ADCollector
+    }
+
+    # 3. Enumerate DCs and pick the first in the local site
+    try {
+        $tempParams = @{ ErrorAction = 'Stop' }
+        if ($Credential) { $tempParams.Credential = $Credential }
+        $dcs = Get-ADDomainController -Filter * @tempParams | Sort-Object { $_.IsGlobalCatalog } -Descending
+        foreach ($dc in $dcs) {
+            if (-not $dc.IsReadOnly -and (Test-Connection -ComputerName $dc.HostName -Count 1 -Quiet -ErrorAction SilentlyContinue)) {
+                Write-Log "Selected writable DC from discovery: $($dc.HostName)" -Level INFO -Component ADCollector
+                return $dc.HostName
+            }
+        }
+    } catch {
+        Write-Log "DC enumeration failed: $_" -Level WARNING -Component ADCollector
+    }
+
+    # 4. No explicit DC — let AD module use DNS SRV records
+    Write-Log "No specific DC selected. AD module will use DNS SRV lookup." -Level INFO -Component ADCollector
+    return $null
+}
+
+function Get-CredentialFromVault {
+    <#
+    .SYNOPSIS
+        Retrieves a stored credential from Windows Credential Manager (DPAPI-encrypted).
+        Works in non-interactive / scheduled task context without prompting.
+    #>
+    [CmdletBinding()]
+    param([string]$Target)
+
+    # Windows Credential Manager via P/Invoke
+    try {
+        $signature = @"
+[DllImport("advapi32.dll", EntryPoint="CredReadW", CharSet=CharSet.Unicode, SetLastError=true)]
+public static extern bool CredRead(string target, int type, int flags, out IntPtr credential);
+
+[DllImport("advapi32.dll", EntryPoint="CredFree")]
+public static extern void CredFree(IntPtr credential);
+
+[StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
+public struct CREDENTIAL {
+    public int Flags;
+    public int Type;
+    public string TargetName;
+    public string Comment;
+    public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten;
+    public int CredentialBlobSize;
+    public IntPtr CredentialBlob;
+    public int Persist;
+    public int AttributeCount;
+    public IntPtr Attributes;
+    public string TargetAlias;
+    public string UserName;
+}
+"@
+        if (-not ([System.Management.Automation.PSTypeName]'CredManager').Type) {
+            Add-Type -MemberDefinition $signature -Name 'CredManager' -Namespace 'WinCred' -ErrorAction Stop
+        }
+
+        [IntPtr]$credPtr = [IntPtr]::Zero
+        $ok = [WinCred.CredManager]::CredRead($Target, 1, 0, [ref]$credPtr)
+
+        if ($ok -and $credPtr -ne [IntPtr]::Zero) {
+            $cred     = [System.Runtime.InteropServices.Marshal]::PtrToStructure($credPtr, [type][WinCred.CredManager+CREDENTIAL]) 2>$null
+            $userName = $cred.UserName
+            if ($cred.CredentialBlobSize -gt 0) {
+                $pwBytes = [byte[]]::new($cred.CredentialBlobSize)
+                [System.Runtime.InteropServices.Marshal]::Copy($cred.CredentialBlob, $pwBytes, 0, $cred.CredentialBlobSize)
+                $pwPlain = [System.Text.Encoding]::Unicode.GetString($pwBytes)
+                $secPwd  = ConvertTo-SecureString $pwPlain -AsPlainText -Force
+                [WinCred.CredManager]::CredFree($credPtr)
+                Write-Log "Credential loaded from Windows Credential Manager: $Target ($userName)" -Level SUCCESS -Component CredVault
+                return [System.Management.Automation.PSCredential]::new($userName, $secPwd)
+            }
+            [WinCred.CredManager]::CredFree($credPtr)
+        }
+    } catch {
+        Write-Log "Credential Manager P/Invoke failed: $_" -Level DEBUG -Component CredVault
+    }
+
+    # Fallback: cmdkey-based check (no extraction possible — just signals presence)
+    $cmdkeyResult = cmdkey /list:$Target 2>$null
+    if ($cmdkeyResult -match "Target:.*$Target") {
+        Write-Log "Credential exists in cmdkey store for '$Target' but cannot be extracted via P/Invoke. Verify Add-Type succeeded." -Level WARNING -Component CredVault
+    } else {
+        Write-Log "No credential found in Credential Manager for target: $Target" -Level WARNING -Component CredVault
+    }
+    return $null
+}
+
+function Test-IsGroupManagedServiceAccount {
+    <#
+    .SYNOPSIS
+        Detects if the current process is running as a gMSA (Group Managed Service Account).
+        gMSAs never need an explicit credential — the system handles the password automatically.
+    #>
+    [CmdletBinding()]
+    param()
+    try {
+        $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+        $name     = $identity.Name
+        # gMSA accounts always end with a $ in the SAM name
+        if ($name -match '\$$') {
+            $samName = $name.Split('\')[-1].TrimEnd('$')
+            $acct    = Get-ADServiceAccount -Filter "SamAccountName -eq '$samName'" -ErrorAction SilentlyContinue
+            if ($acct) {
+                Write-Log "Running as Group Managed Service Account: $name" -Level SUCCESS -Component CredVault
+                return $true
+            }
+        }
+    } catch { }
+    return $false
+}
+
+#endregion
+
 Export-ModuleMember -Function Invoke-ADDataCollection, Get-DomainInfo, Get-ForestInfo,
+    Resolve-TargetDomainController, Get-CredentialFromVault, Test-IsGroupManagedServiceAccount,
     Get-ADUsersData, Get-ADGroupsData, Get-ADComputersData, Get-ServiceAccountsData,
     Get-ManagedServiceAccountsData, Get-OUData, Get-GPOData, Get-DomainControllerData,
     Get-TrustData, Get-PrivilegedGroupsData, Get-ACLFindings, Get-DelegationFindings,

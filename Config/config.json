@@ -1,7 +1,10 @@
 {
   "General": {
     "OrganizationName": "CONTOSO",
+    "TargetDomain": "",
+    "_TargetDomain_Note": "Leave empty to auto-detect from current machine. Set to 'contoso.local' to target a specific domain.",
     "DomainControllers": [],
+    "_DomainControllers_Note": "Preferred DC list in priority order e.g. ['DC01.contoso.local','DC02.contoso.local']. Leave empty to auto-select PDC Emulator.",
     "ReportStoragePath": "C:\\ADAttackPathReports",
     "BaselineStoragePath": "C:\\ADAttackPathReports\\Baselines",
     "LogStoragePath": "C:\\ADAttackPathReports\\Logs",
@@ -97,8 +100,12 @@
   },
   "Credentials": {
     "UseCurrentContext": true,
+    "_UseCurrentContext_Note": "true = use the identity running the script (service account / gMSA). false = load from CredentialManagerTarget.",
     "CredentialManagerTarget": "ADAttackPathAnalysis",
+    "_CredentialManagerTarget_Note": "Name used when storing credentials with cmdkey. Store via: Setup-ServiceAccount.ps1 -StoreCredential",
     "UseCertificate": false,
-    "CertificateThumbprint": ""
+    "CertificateThumbprint": "",
+    "RunAsGMSA": false,
+    "_RunAsGMSA_Note": "Set true when running as a gMSA account. Skips all credential prompts."
   }
 }
