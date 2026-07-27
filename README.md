@@ -184,6 +184,27 @@ $cred = Get-Credential
 
 ---
 
+## Quick Scan: Top Security Gaps Dashboard
+
+For a lightweight, standalone alternative to the full platform above — no `config.json`,
+no installer, just two scripts — see `QuickScan\`. It scans four specific gap areas and
+renders one merged, offline-viewable HTML dashboard ranking the top 20-30 findings by risk.
+
+| Script | Purpose |
+|---|---|
+| `QuickScan\Find-TopADSecurityGaps.ps1` | Read-only scan. Writes one CSV per category to `QuickScan\Output\` (or `-OutputPath`): **ACL Inheritance Gaps**, **Password Security Gaps** (password-not-required, AS-REP roastable, never-expires, reversible encryption, stale/Kerberoastable privileged accounts), **Privilege Escalation Paths** (non-admins who can reach Domain Admin equivalence via nesting, ACEs, or unconstrained delegation), and **Protected Container Misconfiguration** (AdminSDHolder, orphaned `adminCount=1`, legacy Pre-Windows 2000 group, Domain Controllers OU delegation). |
+| `QuickScan\New-SecurityGapsDashboard.ps1` | Merges **every** CSV it finds in a folder — this scan, an older scan, or any other tool's output with the same columns — into one ranked, sortable, filterable dashboard with severity/category breakdowns and a composite exposure score. Single self-contained `.html` file: no CDN, no internet required. |
+
+```powershell
+# 1. Scan (read-only)
+.\QuickScan\Find-TopADSecurityGaps.ps1
+
+# 2. Build the dashboard from everything in Output\ (repeat any time to merge more CSVs)
+.\QuickScan\New-SecurityGapsDashboard.ps1 -TopN 30 -OrganizationName 'Contoso Ltd' -Open
+```
+
+---
+
 ## What Is Analyzed
 
 ### Identity & Account Analysis
